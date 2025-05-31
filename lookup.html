@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CaliRP Appeals Lookup</title>
+  <style>
+    body {
+      background-color: #2f3136;
+      color: #ffffff;
+      font-family: 'Segoe UI', sans-serif;
+      padding: 20px;
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin-bottom: 16px;
+    }
+
+    .lookup-form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .lookup-form input[type="text"] {
+      padding: 10px;
+      border-radius: 4px;
+      border: 1px solid #40444b;
+      background-color: #36393f;
+      color: #ffffff;
+    }
+
+    .lookup-form button {
+      background-color: #5865F2;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .lookup-form button:hover {
+      background-color: #4752C4;
+    }
+
+    .back-button {
+      background-color: #5865F2;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.2s;
+      margin-bottom: 20px;
+      text-decoration: none;
+      display: inline-block;
+    }
+
+    .back-button:hover {
+      background-color: #4752C4;
+    }
+
+    .lookup-result {
+      margin-top: 20px;
+      background-color: #36393f;
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .agent-header {
+      background-color: #2f3136;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+
+    .stats-section {
+      background-color: #2f3136;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+
+    .stats-section h3 {
+      color: #7289da;
+      margin-top: 0;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    .stat-item {
+      background-color: #40444b;
+      padding: 12px;
+      border-radius: 4px;
+    }
+
+    ul {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    li {
+      margin-bottom: 6px;
+      border-bottom: 1px solid #555;
+      padding: 6px 0;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Appeals Agent Lookup</h1>
+  <a href="index.html" class="back-button">← Back to Home</a>
+
+  <div class="lookup-form">
+    <input type="text" id="lookupInput" placeholder="Enter Discord ID" />
+    <button id="lookupButton">Lookup</button>
+  </div>
+
+  <div id="lookupResult" class="lookup-result"></div>
+
+  <script>
+    const appealsSheetId = '1HvZsRJ-p6CyqUigt4BEGJJmIwXdesnkszuiMl2Cax6w';
+    const trainerSheet = '12ka7_wU-8e4ClnM7Sx-bdAjWiFWiWVdu3DIWAGYM87s';
+    const appealsGid = '186779348';
+    const usernamesGid = '1773727699';
+    const rankGid = '1752215197';
+    const trainerGid = '641009283';
+
+    const appealsUrl = `https://docs.google.com/spreadsheets/d/${appealsSheetId}/gviz/tq?gid=${appealsGid}`;
+    const usernamesUrl = `https://docs.google.com/spreadsheets/d/${appealsSheetId}/gviz/tq?gid=${usernamesGid}`;
+    const rankUrl = `https://docs.google.com/spreadsheets/d/${appealsSheetId}/gviz/tq?gid=${rankGid}`;
+    const trainerSheetUrl = `https://docs.google.com/spreadsheets/d/${trainerSheet}/gviz/tq?gid=${trainerGid}`;
+
+    function escapeHTML(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    async function fetchSheetData(url) {
+      const response = await fetch(url);
+      const text = await response.text();
+      const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*?)\);/);
+      return JSON.parse(match[1]);
+    }
+
+    function getDateRanges() {
+      const now = new Date();
+      const weekAgo = new Date(now);
+      weekAgo.setDate(now.getDate() - 7);
+      const monthAgo = new Date(now);
+      monthAgo.setMonth(now.getMonth() - 1);
+      return { weekAgo, monthAgo };
+    }
+
+    function parseGoogleDate(cell) {
+      if (!cell?.v) return null;
+      const match = cell.v.match(/Date\((\d+),(\d+),(\d+),(\d+),(\d+),(\d+)\)/);
+      if (!match) return null;
+      const [, y, m, d, h, mi, s] = match.map(Number);
+      return new Date(Date.UTC(y, m, d, h, mi, s));
+    }
+
+    async function lookupAgent(discordId) {
+      if (!discordId) return;
+
+      const { weekAgo, monthAgo } = getDateRanges();
+      const result = document.getElementById('lookupResult');
+      result.innerHTML = 'Loading...';
+
+      try {
+        const [appeals, usernames, ranks, trainers] = await Promise.all([
+          fetchSheetData(appealsUrl),
+          fetchSheetData(usernamesUrl),
+          fetchSheetData(rankUrl),
+          fetchSheetData(trainerSheetUrl)
+        ]);
+
+        const rankInfo = ranks.table.rows.find(row => row.c[2]?.v === discordId);
+        const userInfo = usernames.table.rows.find(row => row.c[1]?.v === discordId);
+
+        if (!rankInfo || !userInfo) {
+          result.innerHTML = 'Agent not found';
+          return;
+        }
+
+        const appealsData = appeals.table.rows.filter(row => {
+          const agentId = row.c[appeals.table.cols.findIndex(col => col.label === 'Appeals Agent Discord ID')]?.v;
+          return agentId === discordId && parseGoogleDate(row.c[0]);
+        });
+
+        const trainingData = trainers.table.rows.filter(row =>
+          row.c[1]?.v === discordId && parseGoogleDate(row.c[0])
+        );
+
+        const traineeNames = trainingData
+          .flatMap(row => (row.c[4]?.v || '').split(','))
+          .map(name => escapeHTML(name.trim()))
+          .filter(name => name.length > 0);
+
+        const uniqueTrainees = [...new Set(traineeNames)];
+
+        const weeklyTrainees = trainingData
+          .filter(row => parseGoogleDate(row.c[0]) >= weekAgo)
+          .flatMap(row => (row.c[4]?.v || '').split(','))
+          .map(name => escapeHTML(name.trim()))
+          .filter(name => name.length > 0);
+
+        const uniqueTraineesW = [...new Set(weeklyTrainees)];
+
+        const monthlyTrainees = trainingData
+          .filter(row => parseGoogleDate(row.c[0]) >= monthAgo)
+          .flatMap(row => (row.c[4]?.v || '').split(','))
+          .map(name => escapeHTML(name.trim()))
+          .filter(name => name.length > 0);
+
+        const uniqueTraineesM = [...new Set(monthlyTrainees)];
+
+        const traineeList = trainingData.map(row => {
+        const rawMentions = (row.c[4]?.v || '').split(',').map(v => v.trim());
+        const dateObj = parseGoogleDate(row.c[0]);
+        const dateStr = dateObj ? dateObj.toLocaleDateString() : 'Unknown Date';
+
+        return rawMentions.map(mention => {
+            const idMatch = mention.match(/<@(\d+)>/);
+            const discordId = idMatch ? idMatch[1] : null;
+            if (!discordId) return '';
+
+            const userRow = usernames.table.rows.find(r => r.c[1]?.v === discordId);
+            const name = (userRow?.c[0]?.v && userRow.c[0].v !== '#N/A')
+            ? userRow.c[0].v
+            : userRow?.c[2]?.v || 'Unknown';
+
+            const resultMatch = mention.match(/\(([^)]+)\)/);
+            const result = resultMatch ? resultMatch[1] : 'Pass';
+
+            return `<li>${escapeHTML(name)} (${discordId}) - ${escapeHTML(result)} | ${dateStr}</li>`;
+        }).join('');
+        }).join('');
+
+
+
+        const weeklyAppeals = appealsData.filter(row => parseGoogleDate(row.c[0]) >= weekAgo).length;
+        const monthlyAppeals = appealsData.filter(row => parseGoogleDate(row.c[0]) >= monthAgo).length;
+        const weeklyTraining = trainingData.filter(row => parseGoogleDate(row.c[0]) >= weekAgo).length;
+        const monthlyTraining = trainingData.filter(row => parseGoogleDate(row.c[0]) >= monthAgo).length;
+
+        result.innerHTML = `
+          <div class="agent-header">
+            <h2>${escapeHTML(userInfo.c[0]?.v || 'Unknown Username')}</h2>
+            <p>Discord ID: ${escapeHTML(discordId)}</p>
+            <p>Rank: ${escapeHTML(rankInfo.c[3]?.v || 'Unknown')}</p>
+            <p>Time in Role: ${escapeHTML(rankInfo.c[6]?.v || 'Unknown')} days</p>
+          </div>
+
+          <div class="stats-section">
+            <h3>Weekly Stats</h3>
+            <div class="stat-grid">
+              <div class="stat-item"><p>Appeals Handled: ${weeklyAppeals}</p></div>
+              <div class="stat-item"><p>Trainings: ${weeklyTraining}</p></div>
+              <div class="stat-item"><p>Agents Trained: ${uniqueTraineesW.length}</p></div>
+            </div>
+          </div>
+
+          <div class="stats-section">
+            <h3>Monthly Stats</h3>
+            <div class="stat-grid">
+              <div class="stat-item"><p>Appeals Handled: ${monthlyAppeals}</p></div>
+              <div class="stat-item"><p>Trainings: ${monthlyTraining}</p></div>
+              <div class="stat-item"><p>Agents Trained: ${uniqueTraineesM.length}</p></div>
+            </div>
+          </div>
+
+          <div class="stats-section">
+            <h3>All Time Stats</h3>
+            <div class="stat-grid">
+              <div class="stat-item"><p>Total Appeals: ${appealsData.length}</p></div>
+              <div class="stat-item"><p>Total Trainings: ${trainingData.length}</p></div>
+              <div class="stat-item"><p>Total Agents Trained: ${uniqueTrainees.length}</p></div>
+            </div>
+          </div>
+
+          <div class="stats-section">
+            <h3>Trained Agents</h3>
+            <ul>${traineeList || '<li>No trainees found</li>'}</ul>
+          </div>
+        `;
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        result.innerHTML = 'Error fetching data';
+      }
+    }
+
+    document.getElementById('lookupButton').addEventListener('click', () => {
+      const input = document.getElementById('lookupInput').value.trim();
+      lookupAgent(input);
+    });
+
+    document.getElementById('lookupInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        document.getElementById('lookupButton').click();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CaliRP Promotion Eligibility</title>
+    <style>
+        body {
+            background-color: #2f3136;
+            color: #ffffff;
+            font-family: 'Segoe UI', sans-serif;
+            padding: 20px;
+            margin: 0;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 16px;
+        }
+
+        .eligible-list {
+            background-color: #36393f;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .eligible-user {
+            padding: 8px;
+            margin: 4px 0;
+            border-radius: 4px;
+            background-color: #2f3136;
+        }
+
+        .eligible-user.probationary {
+            border-left: 4px solid #43b581;
+        }
+
+        .eligible-user.senior {
+            border-left: 4px solid #faa61a;
+        }
+
+        .copy-button {
+            background-color: #5865F2;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .copy-button:hover {
+            background-color: #4752C4;
+        }
+
+        .back-button {
+            background-color: #5865F2;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-bottom: 20px;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .back-button:hover {
+            background-color: #4752C4;
+        }
+    </style>
+</head>
+<body>
+    <h1>Promotion Eligibility List</h1>
+    <a href="index.html" class="back-button">← Back to Home</a>
+
+    <div class="eligible-list" id="eligible-users">Loading...</div>
+    <button class="copy-button" onclick="copyToClipboard()">Copy Promotion List</button>
+
+    <script>
+        const appealsSheetId = '1HvZsRJ-p6CyqUigt4BEGJJmIwXdesnkszuiMl2Cax6w';
+        const appealsGid = '186779348';
+        const usernamesGid = '1773727699';
+        const rankGid = '1752215197';
+
+        const appealsUrl = `https://docs.google.com/spreadsheets/d/${appealsSheetId}/gviz/tq?gid=${appealsGid}`;
+        const usernamesUrl = `https://docs.google.com/spreadsheets/d/${appealsSheetId}/gviz/tq?gid=${usernamesGid}`;
+        const rankUrl = `https://docs.google.com/spreadsheets/d/${appealsSheetId}/gviz/tq?gid=${rankGid}`;
+
+        let eligibleUsers = [];
+
+        function checkEligibility() {
+            const now = new Date();
+            const monthAgo = new Date(now);
+            monthAgo.setMonth(now.getMonth() - 1);
+
+            Promise.all([
+                fetch(appealsUrl).then(res => res.text()),
+                fetch(usernamesUrl).then(res => res.text()),
+                fetch(rankUrl).then(res => res.text())
+            ]).then(([appealsData, usernamesData, rankData]) => {
+                const appeals = JSON.parse(appealsData.match(/google\.visualization\.Query\.setResponse\((.*)\)/s)[1]);
+                const usernames = JSON.parse(usernamesData.match(/google\.visualization\.Query\.setResponse\((.*)\)/s)[1]);
+                const ranks = JSON.parse(rankData.match(/google\.visualization\.Query\.setResponse\((.*)\)/s)[1]);
+                const counts = processAppeals(appeals, monthAgo);
+                const users = processUsers(usernames, ranks, counts);
+
+                displayEligibleUsers(users);
+            });
+        }
+
+        function processAppeals(appeals, monthAgo) {
+            const counts = {};
+            appeals.table.rows.forEach(row => {
+                const timestamp = row.c[0];
+                const agentId = row.c[appeals.table.cols.findIndex(col => col.label === 'Appeals Agent Discord ID')];
+                
+                if (!timestamp || !timestamp.v || !agentId || !agentId.v) return;
+
+                const match = timestamp.v.match(/Date\((\d+),(\d+),(\d+),(\d+),(\d+),(\d+)\)/);
+                if (!match) return;
+
+                const [, y, m, d, h, mi, s] = match.map(Number);
+                const date = new Date(Date.UTC(y, m, d, h, mi, s));
+                
+                if (date >= monthAgo) {
+                    const id = String(agentId.v).trim();
+                    counts[id] = (counts[id] || 0) + 1;
+                }
+            });
+            return counts;
+        }
+
+        function processUsers(usernames, ranks, counts) {
+            const users = [];
+            const rankRows = ranks.table.rows;
+            const usernameRows = usernames.table.rows;
+
+            rankRows.forEach(row => {
+                const id = row.c[2]?.v;
+                const rank = row.c[3]?.v;
+                const tir = row.c[6]?.v;
+                const train = row.c[11]?.v;
+                console.log(train);
+                if (!id || !rank) return;
+
+                const appeals = counts[id] || 0;
+                const username = findUsername(usernameRows, id);
+
+                if (rank === "Probationary Agent" && appeals >= 8 && tir > 14) {
+                    users.push({ id, name: username, currentRank: rank, newRank: "Appeals Agent", appeals });
+                } else if (rank === "Appeals Agent" && appeals >= 8 && tir > 28 && train === true) {
+                    users.push({ id, name: username, currentRank: rank, newRank: "Senior Agent", appeals });
+                }
+            });
+
+            return users;
+        }
+
+        function findUsername(usernameRows, id) {
+            const userRow = usernameRows.find(row => row.c[1]?.v === id);
+            return userRow ? (userRow.c[0]?.v || userRow.c[2]?.v || "Unknown") : "Unknown";
+        }
+
+        function displayEligibleUsers(users) {
+            const container = document.getElementById('eligible-users');
+            if (users.length === 0) {
+                container.innerHTML = '<p>No users eligible for promotion at this time.</p>';
+                return;
+            }
+
+            const html = users.map(user => `
+                <div class="eligible-user ${user.currentRank === 'Probationary Agent' ? 'probationary' : 'senior'}">
+                    ${user.name} (${user.id})
+                    <br>Current Rank: ${user.currentRank}
+                    <br>Eligible for: ${user.newRank}
+                    <br>Appeals this month: ${user.appeals}
+                </div>
+            `).join('');
+
+            container.innerHTML = html;
+            eligibleUsers = users;
+        }
+
+        function copyToClipboard() {
+            const now = new Date();
+            const monthNames = ["January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"
+            ];
+            
+            const grouped = eligibleUsers.reduce((acc, user) => {
+                const group = user.newRank === "Appeals Agent" ? "agents" : "seniors";
+                if (!acc[group]) acc[group] = [];
+                acc[group].push(user);
+                return acc;
+            }, {});
+
+            const dateStr = `${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}/${now.getFullYear()}`;
+            
+            const text = `${monthNames[now.getMonth()]} Promotions | ${dateStr}\n` +
+                (grouped.agents ? grouped.agents.map(user => `<@${user.id}> --> Agent`).join('\n') : '') +
+                (grouped.agents && grouped.seniors ? '\n\n' : '') +
+                (grouped.seniors ? grouped.seniors.map(user => `<@${user.id}> --> Senior Agent`).join('\n') : '') +
+                (grouped.agents || grouped.seniors ? '' : 'No users eligible for promotion at this time.');
+
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Promotion list copied to clipboard!');
+            }).catch(err => {
+                console.error('Failed to copy text: ', err);
+                alert('Failed to copy text. Please try again.');
+            });
+        }
+
+        checkEligibility();
+    </script>
+</body>
+</html>

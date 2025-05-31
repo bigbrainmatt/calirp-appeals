@@ -56,6 +56,11 @@
         color: #000;
     }
 
+    .leader.green {
+        background-color: #00ff37;
+        color: #000;
+    }
+
     .leader.red {
         background-color: #ff5555;
         color: #fff;
@@ -111,9 +116,12 @@
 const appealsSheetId = '1HvZsRJ-p6CyqUigt4BEGJJmIwXdesnkszuiMl2Cax6w';
 const appealsGid = '186779348';
 const usernamesGid = '1773727699';
+const rankGid = '1752215197';
 
 const appealsUrl = `https://docs.google.com/spreadsheets/d/${appealsSheetId}/gviz/tq?gid=${appealsGid}`;
 const usernamesUrl = `https://docs.google.com/spreadsheets/d/${appealsSheetId}/gviz/tq?gid=${usernamesGid}`;
+const rankUrl = `https://docs.google.com/spreadsheets/d/${appealsSheetId}/gviz/tq?gid=${rankGid}`;
+
 
 let currentRange = 'week';
 let idToNameMap = {};
@@ -137,11 +145,35 @@ function getStartDate(range) {
 }
 
 function getThreshold(range) {
-    if (range === 'week') return { yellow: 3, red: 5 };
-    if (range === 'biweek') return { yellow: 7, red: 10 };
-    if (range === 'month') return { yellow: 15, red: 20 };
-    if (range === 'alltime') return { yellow: 50, red: 100 };
-    return { yellow: 15, red: 20 };
+    if (range === 'week') return { prob: 3, sr: 5, min:2 };
+    if (range === 'biweek') return { prob: 6, sr: 10 , min:4};
+    if (range === 'month') return { prob: 12, sr: 20, min:8 };
+    if (range === 'alltime') return { prob: 100, sr: 100, };
+}
+
+let idToRankMap = {};
+
+function loadRanksAndData(range) {
+    fetch(rankUrl)
+        .then(res => res.text())
+        .then(text => {
+            const match = text.match(/google\.visualization\.Query\.setResponse\((.*)\)/s);
+            const json = JSON.parse(match[1]);
+            const rows = json.table.rows;
+
+            rows.forEach(row => {
+                const idCell = row.c[2];
+                const rankCell = row.c[3];
+
+                if (!idCell || !idCell.v) return;
+                const id = String(idCell.v).trim();
+                const rank = (rankCell && rankCell.v) ? String(rankCell.v).trim() : "Unknown";
+
+                idToRankMap[id] = rank;
+            });
+
+            loadUsernamesAndData(range);
+        });
 }
 
 function loadUsernamesAndData(range) {
@@ -226,18 +258,37 @@ function loadData(range) {
             board.innerHTML = '';
 
             leaderboard.forEach(([id, data], index) => {
+                const rank = idToRankMap[id] || 'Unknown';
                 const div = document.createElement('div');
                 div.className = 'leader';
-                if (data.count > threshold.red) div.classList.add('red');
-                else if (data.count > threshold.yellow) div.classList.add('yellow');
 
-                div.innerHTML = `<div class="name">#${index + 1} ${data.name} (${id})</div><div class="count">${data.count} Appeals</div>`;
+                if (rank === "Unknown")
+                    return;
+
+                if (rank === "Executive Agent")
+                    div.classList.add('green');
+
+                if (data.count < threshold.min) div.classList.add('red');
+
+                if (rank === "Probationary Agent" || rank === "Appeals Agent")
+                    if( data.count > threshold.prob) 
+                        div.classList.add('yellow');
+                
+                if (rank === "Senior Agent")
+                    if (data.count > threshold.sr) 
+                        div.classList.add('yellow');
+
+                div.innerHTML = `
+                <div class="name">#${index + 1} ${data.name} (${id}) | ${rank}</div>
+                <div class="count">${data.count} Appeals</div>`;
+
+
                 board.appendChild(div);
             });
         });
 }
 
-loadUsernamesAndData(currentRange);
+loadRanksAndData(currentRange);
 </script>
 
 </body>

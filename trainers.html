@@ -12,6 +12,14 @@
         margin: 0;
     }
 
+    .leader.green {
+        border-left: 6px solid #43b581;
+    }
+
+    .leader.red {
+        border-left: 6px solid #f04747;
+    }
+
     h1 {
         font-size: 24px;
         margin-bottom: 16px;
@@ -173,19 +181,23 @@ function loadUsernames() {
             const rows = json.table.rows;
 
             rows.forEach(row => {
-                const preferredCell = row.c[0];
+                const nameCell = row.c[0];
                 const idCell = row.c[1];
-                const usernameCell = row.c[2];
+                const tagCell = row.c[2];
 
                 if (!idCell || !idCell.v) return;
-                const id = String(idCell.v).trim();
+                const discordId = String(idCell.v).trim();
 
-                let name = (preferredCell && preferredCell.v) ? String(preferredCell.v).trim() : "";
-                if (!name || name.toLowerCase() === "unknown") {
-                    name = (usernameCell && usernameCell.v) ? String(usernameCell.v).trim() : "Unknown";
+                let name = '';
+                if (nameCell && nameCell.v && nameCell.v !== '#N/A' && nameCell.v.toLowerCase() !== 'unknown') {
+                    name = String(nameCell.v).trim();
+                } else if (tagCell && tagCell.v) {
+                    name = String(tagCell.v).trim();
+                } else {
+                    name = 'Unknown';
                 }
 
-                idToNameMap[id] = name;
+                idToNameMap[discordId] = name;
             });
         });
 }
@@ -244,6 +256,22 @@ function loadData(range) {
 
                 const div = document.createElement('div');
                 div.className = 'leader';
+
+                const traineeCount = data.trainees.size;
+                let meetsGoal = false;
+
+                if (currentRange === 'alltime') {
+                    meetsGoal = traineeCount >= 30;
+                } else if (currentRange === 'month') {
+                    meetsGoal = traineeCount >= 8;
+                } else if (currentRange === 'biweek') {
+                    meetsGoal = traineeCount >= 4;
+                } else {
+                    meetsGoal = traineeCount >= 2;
+                }
+
+                div.classList.add(meetsGoal ? 'green' : 'red');
+
                 div.innerHTML = `
                     <div class="header">
                         <span class="name">#${index + 1} ${name} (${id})</span>
