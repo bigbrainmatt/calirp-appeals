@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CaliRP Trainer Leaderboard</title>
+  <style>
+    body {
+        background-color: #2f3136;
+        color: #ffffff;
+        font-family: 'Segoe UI', sans-serif;
+        padding: 20px;
+        margin: 0;
+    }
+
+    h1 {
+        font-size: 24px;
+        margin-bottom: 16px;
+    }
+
+    .button-group {
+        margin-bottom: 20px;
+    }
+
+    .button-group button {
+        background-color: #4f545c;
+        color: #fff;
+        border: none;
+        padding: 8px 14px;
+        margin-right: 10px;
+        border-radius: 6px;
+        cursor: pointer;
+    }
+
+    .button-group button:hover,
+    .button-group button.active {
+        background-color: #7289da;
+    }
+
+    .leaderboard {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .leader {
+        background-color: #36393f;
+        border-radius: 8px;
+        padding: 12px 16px;
+        cursor: pointer;
+    }
+
+    .leader:hover {
+        background-color: #40444b;
+    }
+
+    .leader .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .leader .name {
+        font-size: 16px;
+        font-weight: bold;
+    }
+
+    .leader .count {
+        background-color: #7289da;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: bold;
+    }
+
+    .trainee-list {
+        display: none;
+        padding: 10px;
+        margin-top: 10px;
+        border-top: 1px solid #555;
+    }
+
+    .leader.open .trainee-list {
+        display: block;
+    }
+
+    .trainee-list ul {
+        list-style-type: disc;
+        padding-left: 20px;
+    }
+
+    .trainee-list li {
+        margin: 4px 0;
+    }
+
+    .back-button {
+        background-color: #5865F2;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        margin-bottom: 20px;
+        text-decoration: none;
+        display: inline-block;
+    }
+
+    .back-button:hover {
+        background-color: #4752C4;
+    }
+  </style>
+</head>
+<body>
+
+<h1>CaliRP Trainer Leaderboard – <span id="range-title">Weekly</span></h1>
+<a href="index.html" class="back-button">← Back to Home</a>
+
+<div class="button-group">
+    <button onclick="loadData('week')" class="active">Weekly</button>
+    <button onclick="loadData('biweek')">2 Weeks</button>
+    <button onclick="loadData('month')">Monthly</button>
+    <button onclick="loadData('alltime')">All Time</button>
+</div>
+
+<div class="leaderboard" id="spreadsheet-data">Loading leaderboard...</div>
+
+<script>
+const trainerSheetUrl = "https://docs.google.com/spreadsheets/d/12ka7_wU-8e4ClnM7Sx-bdAjWiFWiWVdu3DIWAGYM87s/gviz/tq?gid=641009283";
+const usernameSheetUrl = "https://docs.google.com/spreadsheets/d/1HvZsRJ-p6CyqUigt4BEGJJmIwXdesnkszuiMl2Cax6w/gviz/tq?gid=1773727699";
+
+let currentRange = 'week';
+let trainerStats = {};
+let idToNameMap = {};
+
+function getStartDate(range) {
+    const now = new Date();
+    const cutoff = new Date(now);
+    switch (range) {
+        case 'week':
+            const day = now.getUTCDay();
+            const daysBack = day === 0 ? 1 : day + 1;
+            cutoff.setUTCDate(cutoff.getUTCDate() - daysBack);
+            cutoff.setUTCHours(1, 0, 0, 0);
+            if (cutoff > now) cutoff.setUTCDate(cutoff.getUTCDate() - 7);
+            return cutoff;
+        case 'biweek': cutoff.setDate(now.getDate() - 14); return cutoff;
+        case 'month': cutoff.setMonth(now.getMonth() - 1); return cutoff;
+        case 'alltime': return new Date(0);
+        default: return now;
+    }
+}
+
+function getThreshold(range) {
+    if (range === 'week') return { yellow: 3, red: 5 };
+    if (range === 'biweek') return { yellow: 7, red: 10 };
+    if (range === 'month') return { yellow: 15, red: 20 };
+    if (range === 'alltime') return { yellow: 50, red: 100 };
+    return { yellow: 15, red: 20 };
+}
+
+function extractIds(mentionString) {
+    const matches = mentionString.match(/<@!?(\d+)>/g);
+    return matches ? matches.map(m => m.replace(/<@!?|>/g, '')) : [];
+}
+
+function loadUsernames() {
+    return fetch(usernameSheetUrl)
+        .then(res => res.text())
+        .then(text => {
+            const match = text.match(/google\.visualization\.Query\.setResponse\((.*)\)/s);
+            const json = JSON.parse(match[1]);
+            const rows = json.table.rows;
+
+            rows.forEach(row => {
+                const preferredCell = row.c[0];
+                const idCell = row.c[1];
+                const usernameCell = row.c[2];
+
+                if (!idCell || !idCell.v) return;
+                const id = String(idCell.v).trim();
+
+                let name = (preferredCell && preferredCell.v) ? String(preferredCell.v).trim() : "";
+                if (!name || name.toLowerCase() === "unknown") {
+                    name = (usernameCell && usernameCell.v) ? String(usernameCell.v).trim() : "Unknown";
+                }
+
+                idToNameMap[id] = name;
+            });
+        });
+}
+
+function loadData(range) {
+    currentRange = range;
+    document.getElementById('range-title').innerText =
+        range === 'week' ? 'Weekly' :
+        range === 'biweek' ? '2 Weeks' :
+        range === 'month' ? 'Monthly' : 'All Time';
+
+    document.querySelectorAll('.button-group button').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`.button-group button[onclick="loadData('${range}')"]`).classList.add('active');
+
+    fetch(trainerSheetUrl)
+        .then(res => res.text())
+        .then(text => {
+            const match = text.match(/google\.visualization\.Query\.setResponse\((.*)\)/s);
+            const json = JSON.parse(match[1]);
+            const rows = json.table.rows;
+
+            trainerStats = {};
+            const startDate = getStartDate(range);
+            const threshold = getThreshold(range);
+
+            rows.forEach(row => {
+                const timestampCell = row.c[0];
+                const trainerIdCell = row.c[1];
+                const traineeIdsCell = row.c[4];
+
+                if (!timestampCell || !timestampCell.f || !trainerIdCell || !trainerIdCell.v) return;
+
+                const date = new Date(timestampCell.f);
+                if (date < startDate) return;
+
+                const trainerId = String(trainerIdCell.v).trim();
+                const traineeIds = traineeIdsCell && traineeIdsCell.v ? extractIds(traineeIdsCell.v) : [];
+
+                if (!trainerStats[trainerId]) trainerStats[trainerId] = { count: 0, trainees: new Set() };
+                trainerStats[trainerId].count++;
+                traineeIds.forEach(id => trainerStats[trainerId].trainees.add(id));
+            });
+
+            const board = document.getElementById('spreadsheet-data');
+            board.innerHTML = '';
+
+            const sorted = Object.entries(trainerStats).sort((a, b) => {
+                const totalA = a[1].count + a[1].trainees.size;
+                const totalB = b[1].count + b[1].trainees.size;
+                return totalB - totalA;
+            });
+
+            sorted.forEach(([id, data], index) => {
+                const name = idToNameMap[id] || 'Unknown';
+                const trainees = Array.from(data.trainees).map(tid => `${idToNameMap[tid] || 'Unknown'} (${tid})`).join('</li><li>');
+
+                const div = document.createElement('div');
+                div.className = 'leader';
+                div.innerHTML = `
+                    <div class="header">
+                        <span class="name">#${index + 1} ${name} (${id})</span>
+                        <span class="count">${data.count} trainings • ${data.trainees.size} trainees</span>
+                    </div>
+                    <div class="trainee-list"><ul><li>${trainees}</li></ul></div>
+                `;
+
+                div.addEventListener('click', () => div.classList.toggle('open'));
+                board.appendChild(div);
+            });
+        });
+}
+
+loadUsernames().then(() => loadData(currentRange));
+</script>
+
+</body>
+</html>
