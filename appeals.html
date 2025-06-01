@@ -124,37 +124,43 @@ let currentRange = 'week';
 let idToNameMap = {};
 
 function getStartDate(range) {
-    const now = new Date();
-    const cutoff = new Date(now);
+    const nowUTC = new Date();
+    const nowEST = new Date(nowUTC.getTime() - 5 * 60 * 60 * 1000);
 
     switch (range) {
         case 'week': {
             for (let i = 0; i <= 14; i++) {
-                const test = new Date(now);
-                test.setUTCDate(now.getUTCDate() - i);
-                test.setUTCHours(1, 0, 0, 0);
-                if (test <= now && test.getUTCDay() === 0) {
-                    return test;
+                const candidateEST = new Date(nowEST);
+                candidateEST.setDate(nowEST.getDate() - i);
+                candidateEST.setHours(20, 0, 0, 0);
+                if (candidateEST <= nowEST && candidateEST.getDay() === 6) {
+                    const candidateUTC = new Date(candidateEST.getTime() + 5 * 60 * 60 * 1000);
+                    return candidateUTC;
                 }
             }
             return new Date(0);
         }
 
-        case 'biweek':
-            cutoff.setDate(now.getDate() - 14);
-            return cutoff;
+        case 'biweek': {
+            const result = new Date(nowEST);
+            result.setDate(result.getDate() - 14);
+            return new Date(result.getTime() + 5 * 60 * 60 * 1000);
+        }
 
-        case 'month':
-            cutoff.setMonth(now.getMonth() - 1);
-            return cutoff;
+        case 'month': {
+            const result = new Date(nowEST);
+            result.setMonth(result.getMonth() - 1);
+            return new Date(result.getTime() + 5 * 60 * 60 * 1000);
+        }
 
         case 'alltime':
             return new Date(0);
 
         default:
-            return now;
+            return nowUTC;
     }
 }
+
 
 
 function getThreshold(range) {
